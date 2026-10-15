@@ -174,6 +174,7 @@ curl -s "http://127.0.0.1:5001/api/salary?cert=<身份证号>"
 | `DPY-3010 connections to this database server version are not supported in thin mode` | Oracle 11g 必须 thick 模式。确认 `db.py` 中 `oracledb.init_oracle_client` 已执行，且 `LD_LIBRARY_PATH` 已设置。用 `start.sh` 启动即可。 |
 | `DPI-1047 Cannot locate a 64-bit Oracle Client library` / `libnnz.so: cannot open shared object file` | `LD_LIBRARY_PATH` 未包含 `/opt/oracle/instantclient_23_4`。用 `start.sh` 启动，或手动 `export LD_LIBRARY_PATH=/opt/oracle/instantclient_23_4:$LD_LIBRARY_PATH`。 |
 | 端口冲突：`Address already in use` | `app.py` 默认监听 5001。如需修改，编辑 `app.py` 末尾 `app.run(host="0.0.0.0", port=5001, debug=False)` 中的 `port`。 |
+| `start.ps1` 打开乱码、报"数组索引表达式丢失/字符串缺少终止符/缺少右括号" | 文件编码问题：`.ps1` 中文必须存为 **UTF-8 with BOM**，否则 Windows PowerShell 5.1 按 GBK 误读中文导致连锁语法错误。仓库已修复，请重新下载代码包或 `git pull` 后重试；不要用记事本"另存为 ANSI" |
 | 查询很慢 / 超时 | 检查到 `172.16.0.60` 的网络是否可达，以及 `.env` 中 `DB_HOST` / `DB_PORT` / `DB_SERVICE_NAME` / `DB_USER` / `DB_PASSWORD` 是否正确。 |
 | `.env` 不小心被提交到仓库 | 立即轮换数据库口令。`.gitignore` 已忽略 `.env`，但历史提交中的口令仍可见，需修改密码并 `git rm --cached .env`。 |
 
