@@ -1,0 +1,4 @@
+flask
+oracledb
+openpyxl
+python-dotenv

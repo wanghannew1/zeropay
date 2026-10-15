@@ -1,0 +1,18 @@
+# 机密配置（含数据库口令）永不入库
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 会话/工具状态
+.omo/
+
+# 运行产物
+*.log
+logs/
+output/
+*.xlsx
+!templates/**/*.xlsx
