@@ -96,29 +96,71 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "[deps] 就绪" -ForegroundColor Green
 
-# --- 5. Oracle Instant Client (Oracle 11g 必须 thick 模式) ---
-if (-not $env:ORACLE_CLIENT_LIB_DIR) {
-    $candidates = @(
-        "C:\oracle\instantclient_23_4",
-        "C:\instantclient_23_4",
-        "$PSScriptRoot\instantclient_23_4"
-    )
-    foreach ($c in $candidates) {
-        if (Test-Path "$c\oci.dll") {
-            $env:ORACLE_CLIENT_LIB_DIR = $c
-            break
-        }
+# --- 5. Oracle Instant Client (Oracle 11g 必须 thick 模式，自动下载) ---
+$CLIENT_DIR = Join-Path $PSScriptRoot "instantclient_23_4"
+$LOCAL_ZIP = Join-Path $PSScriptRoot "instantclient-basic-win64-23.4.zip"
+$ZIP_URL = "https://download.oracle.com/otn_software/nt/instantclient/2340000/instantclient-basic-windows.x64-23.4.0.24.05.zip"
+if ($env:ZERO_PAY_CLIENT_ZIP_URL) { $ZIP_URL = $env:ZERO_PAY_CLIENT_ZIP_URL }
+
+$clientDir = $null
+if ($env:ORACLE_CLIENT_LIB_DIR -and (Test-Path "$($env:ORACLE_CLIENT_LIB_DIR)\oci.dll")) {
+    $clientDir = $env:ORACLE_CLIENT_LIB_DIR
+}
+if (-not $clientDir) {
+    foreach ($c in @($CLIENT_DIR, "C:\oracle\instantclient_23_4", "C:\instantclient_23_4")) {
+        if (Test-Path "$c\oci.dll") { $clientDir = $c; break }
     }
 }
 
-if ($env:ORACLE_CLIENT_LIB_DIR -and (Test-Path "$($env:ORACLE_CLIENT_LIB_DIR)\oci.dll")) {
-    $env:PATH = "$($env:ORACLE_CLIENT_LIB_DIR);" + $env:PATH
-    Write-Host "[oracle] Instant Client: $($env:ORACLE_CLIENT_LIB_DIR)" -ForegroundColor Green
+if (-not $clientDir) {
+    if (-not (Test-Path $LOCAL_ZIP)) {
+        Write-Host "[oracle] 下载 Oracle Instant Client Basic (~120MB)，请稍候..." -ForegroundColor Yellow
+        Write-Host "[oracle] $ZIP_URL" -ForegroundColor DarkGray
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+            $ProgressPreference = 'SilentlyContinue'
+            Invoke-WebRequest -Uri $ZIP_URL -OutFile $LOCAL_ZIP -UseBasicParsing -Headers @{ Cookie = "oraclelicense=accept-securebackup-cookie" }
+        }
+        catch {
+            Write-Host "[ERROR] 下载失败: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "        备选方案:" -ForegroundColor Yellow
+            Write-Host "        1) 手动下载 Basic 包解压到 $CLIENT_DIR（注意不能用 Basic Light，中文库需完整字符集）" -ForegroundColor Yellow
+            Write-Host "        2) 设置环境变量 ZERO_PAY_CLIENT_ZIP_URL 指向内网镜像 zip 后重试" -ForegroundColor Yellow
+            Read-Host "按回车键退出"
+            exit 1
+        }
+    }
+    else {
+        Write-Host "[oracle] 使用本地压缩包: $LOCAL_ZIP" -ForegroundColor Green
+    }
+    $tmp = Join-Path $env:TEMP "zeropay-ic-extract"
+    if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
+    try {
+        Expand-Archive -Path $LOCAL_ZIP -DestinationPath $tmp -Force
+    }
+    catch {
+        Write-Host "[ERROR] 解压失败，压缩包可能损坏，请删除后重试: $LOCAL_ZIP" -ForegroundColor Red
+        Read-Host "按回车键退出"
+        exit 1
+    }
+    $oci = Get-ChildItem -Path $tmp -Filter "oci.dll" -Recurse | Select-Object -First 1
+    if (-not $oci) {
+        Write-Host "[ERROR] 压缩包内未找到 oci.dll" -ForegroundColor Red
+        Read-Host "按回车键退出"
+        exit 1
+    }
+    Move-Item -Path $oci.Directory.FullName -Destination $CLIENT_DIR
+    Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+    $clientDir = $CLIENT_DIR
+    Write-Host "[oracle] 已解压就绪: $clientDir" -ForegroundColor Green
 }
-else {
-    Write-Host "[oracle] 未找到 Oracle Instant Client (oci.dll)，启动可能报 DPI-1047" -ForegroundColor Yellow
-    Write-Host "         请安装 Instant Client 23.4 for Windows 并设置环境变量:" -ForegroundColor Yellow
-    Write-Host "         setx ORACLE_CLIENT_LIB_DIR ""C:\oracle\instantclient_23_4""" -ForegroundColor Yellow
+
+$env:ORACLE_CLIENT_LIB_DIR = $clientDir
+$env:PATH = "$clientDir;" + $env:PATH
+Write-Host "[oracle] Instant Client: $clientDir" -ForegroundColor Green
+
+if (-not (Test-Path "$env:SystemRoot\System32\vcruntime140.dll")) {
+    Write-Host "[oracle] 提示: 未检测到 VC++ 运行库，若启动报错请安装微软 VC++ 2015-2022 x64 运行库" -ForegroundColor Yellow
 }
 
 # --- 6. Launch ---

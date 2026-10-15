@@ -2,8 +2,14 @@ import os
 import oracledb
 from config import DB_CONFIG
 
-ORACLE_CLIENT_LIB_DIR = os.environ.get(
-    "ORACLE_CLIENT_LIB_DIR", "/opt/oracle/instantclient_23_4"
+_PROJECT_CLIENT_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "instantclient_23_4"
+)
+
+ORACLE_CLIENT_LIB_DIR = os.environ.get("ORACLE_CLIENT_LIB_DIR") or (
+    _PROJECT_CLIENT_DIR
+    if os.path.isdir(_PROJECT_CLIENT_DIR)
+    else "/opt/oracle/instantclient_23_4"
 )
 
 _pool = None
