@@ -1,4 +1,4 @@
-# ZeroPay 个人工资发放查询 - Windows 一键启动脚本
+﻿# ZeroPay 个人工资发放查询 - Windows 一键启动脚本
 # 参考 approval_feishu/start.ps1 模式：uv pip 安装依赖并启动，无需手动激活虚拟环境。
 # 建议通过 start.bat 双击启动；直接运行本文件需在 PowerShell 中执行: .\start.ps1
 
