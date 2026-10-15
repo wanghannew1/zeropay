@@ -2,7 +2,9 @@ import os
 import oracledb
 from config import DB_CONFIG
 
-ORACLE_CLIENT_LIB_DIR = "/opt/oracle/instantclient_23_4"
+ORACLE_CLIENT_LIB_DIR = os.environ.get(
+    "ORACLE_CLIENT_LIB_DIR", "/opt/oracle/instantclient_23_4"
+)
 
 _pool = None
 
@@ -10,10 +12,18 @@ _pool = None
 def init_db():
     global _pool
     # Set LD_LIBRARY_PATH BEFORE init_oracle_client (required for thick mode)
-    os.environ["LD_LIBRARY_PATH"] = (
-        ORACLE_CLIENT_LIB_DIR + ":" + os.environ.get("LD_LIBRARY_PATH", "")
-    )
-    oracledb.init_oracle_client(lib_dir=ORACLE_CLIENT_LIB_DIR)
+    if os.path.isdir(ORACLE_CLIENT_LIB_DIR):
+        os.environ["LD_LIBRARY_PATH"] = (
+            ORACLE_CLIENT_LIB_DIR
+            + os.pathsep
+            + os.environ.get("LD_LIBRARY_PATH", "")
+        )
+        os.environ["PATH"] = (
+            ORACLE_CLIENT_LIB_DIR + os.pathsep + os.environ.get("PATH", "")
+        )
+        oracledb.init_oracle_client(lib_dir=ORACLE_CLIENT_LIB_DIR)
+    else:
+        oracledb.init_oracle_client()
     dsn = f"{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['service_name']}"
     _pool = oracledb.create_pool(
         user=DB_CONFIG["user"],
