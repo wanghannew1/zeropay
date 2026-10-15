@@ -48,6 +48,8 @@ chmod +x start.sh
 
 ## Windows 部署
 
+> ⚠️ **安装路径请勿包含中文**（如 `C:\Users\张三\zeropay` 是错误的），建议解压到纯英文路径，例如 `C:\zeropay`。含中文路径会导致 Python/Oracle 客户端依赖加载失败或路径解析异常。
+
 Windows 下双击 `start.bat`（内部调用 `start.ps1`）即可自动完成依赖安装并启动：
 
 1. 安装 [uv](https://docs.astral.sh/uv/getting-started/installation/)（推荐，脚本自动管理 `.venv`；无 uv 时回退系统 Python + pip）与 Python 3.8+
