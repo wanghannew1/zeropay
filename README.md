@@ -14,7 +14,7 @@
 
 - 操作系统：Linux（已在 Ubuntu 上验证）
 - Python 3.8 及以上
-- Oracle Instant Client 23.4 已安装在 `/opt/oracle/instantclient_23_4`，必须以 **thick 模式** 连接（Oracle 11g 不支持 thin 模式）
+- Oracle Instant Client 23.4 **Basic（完整包）**：启动脚本会自动从 Oracle 官网下载并解压到项目内 `instantclient_23_4/`，无需手动安装（Oracle 11g 不支持 thin 模式，必须 thick）。注意不能用 Basic Light（仅西文字符集，本库为 ZHS16GBK 会中文乱码）。详见「Oracle Instant Client 下载」一节
 - 网络可达 Oracle 数据库 `172.16.0.60:1521/orcl`
 - 本机端口 `5001` 空闲（或按后文说明修改）
 
@@ -51,12 +51,36 @@ chmod +x start.sh
 Windows 下双击 `start.bat`（内部调用 `start.ps1`）即可自动完成依赖安装并启动：
 
 1. 安装 [uv](https://docs.astral.sh/uv/getting-started/installation/)（推荐，脚本自动管理 `.venv`；无 uv 时回退系统 Python + pip）与 Python 3.8+
-2. 安装 Oracle Instant Client 23.4 **for Windows**，解压到如 `C:\oracle\instantclient_23_4`，并设置环境变量 `ORACLE_CLIENT_LIB_DIR` 指向该目录（脚本会自动探测 `C:\oracle\instantclient_23_4`、`C:\instantclient_23_4`、项目目录下 `instantclient_23_4`）
+2. **无需手动安装 Oracle 客户端**：`start.ps1` 启动时自动从 Oracle 官网下载 Instant Client Basic (~120MB) 并解压到项目内 `instantclient_23_4\`；如已有客户端，放置到项目 `instantclient_23_4\` 或 `C:\oracle\instantclient_23_4` 亦可（详见「Oracle Instant Client 下载」）
 3. `copy .env.example .env` 并将 `DB_PASSWORD` 填为真实数据库口令
 4. 双击 `start.bat`（或在 PowerShell 中执行 `.\start.ps1`）
 5. 浏览器访问 `http://localhost:5001`
 
 依赖通过 `uv pip install -r requirements.txt`（清华镜像）安装，已装齐则跳过。若 PowerShell 提示执行策略限制，先执行 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`（使用 `start.bat` 启动则无需此步）。
+
+## Oracle Instant Client 下载（自动下载失败时手动安装）
+
+启动脚本默认从 Oracle 官网直链自动下载 **Basic 完整包**（不能用 Basic Light，本库字符集 ZHS16GBK，Light 会中文乱码）。若网络不通或下载失败，可手动下载后按下述任一方式放置：
+
+| 平台 | 直链（约 120MB） |
+|---|---|
+| Windows x64 | `https://download.oracle.com/otn_software/nt/instantclient/2340000/instantclient-basic-windows.x64-23.4.0.24.05.zip` |
+| Linux x64 | `https://download.oracle.com/otn_software/linux/instantclient/2340000/instantclient-basic-linux.x64-23.4.0.24.05.zip` |
+
+官方下载页（如直链失效，到此选 23.4 版本 Basic 包）：
+- Windows: https://www.oracle.com/database/technologies/instant-client/winx64-64-downloads.html
+- Linux: https://www.oracle.com/database/technologies/instant-client/linux-downloads.html
+
+> 用浏览器或 wget/curl 下载时需接受 Oracle 许可协议；命令行下载可加请求头 `Cookie: oraclelicense=accept-securebackup-cookie`。
+
+手动放置方式（任选其一，脚本按顺序探测）：
+
+1. **项目内 zip**：把 zip 原样放到项目根目录，命名 `instantclient-basic-win64-23.4.zip`（Windows）或 `instantclient-basic-linux64-23.4.zip`（Linux），脚本会直接解压使用，不再联网
+2. **项目内目录**：把 zip 解压后的目录改名（或移动）为项目根目录下的 `instantclient_23_4/`（确保里面有 `oci.dll` / `libclntsh.so`）
+3. **系统目录**：解压到 `C:\oracle\instantclient_23_4` 或 `/opt/oracle/instantclient_23_4`
+4. **内网镜像**：设置环境变量 `ZERO_PAY_CLIENT_ZIP_URL=<zip 地址>`（可为内网 HTTP/共享路径），脚本改为从该地址下载
+
+也可设置 `ORACLE_CLIENT_LIB_DIR` 环境变量直接指定客户端目录，优先级最高。
 
 ## 以 systemd 服务常驻（推荐生产）
 
