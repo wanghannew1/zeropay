@@ -46,6 +46,18 @@ chmod +x start.sh
 #    http://<服务器IP>:5001
 ```
 
+## Windows 部署
+
+Windows 下双击 `start.bat`（内部调用 `start.ps1`）即可自动完成依赖安装并启动：
+
+1. 安装 [uv](https://docs.astral.sh/uv/getting-started/installation/)（推荐，脚本自动管理 `.venv`；无 uv 时回退系统 Python + pip）与 Python 3.8+
+2. 安装 Oracle Instant Client 23.4 **for Windows**，解压到如 `C:\oracle\instantclient_23_4`，并设置环境变量 `ORACLE_CLIENT_LIB_DIR` 指向该目录（脚本会自动探测 `C:\oracle\instantclient_23_4`、`C:\instantclient_23_4`、项目目录下 `instantclient_23_4`）
+3. `copy .env.example .env` 并将 `DB_PASSWORD` 填为真实数据库口令
+4. 双击 `start.bat`（或在 PowerShell 中执行 `.\start.ps1`）
+5. 浏览器访问 `http://localhost:5001`
+
+依赖通过 `uv pip install -r requirements.txt`（清华镜像）安装，已装齐则跳过。若 PowerShell 提示执行策略限制，先执行 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`（使用 `start.bat` 启动则无需此步）。
+
 ## 以 systemd 服务常驻（推荐生产）
 
 在服务器上创建 `zeropay.service`（内容如下）：
@@ -151,7 +163,9 @@ ZeroPay/
 ├── config.py           # 从 .env 读取配置
 ├── templates/
 │   └── index.html      # 前端页面（查询框、结果表格、导出按钮）
-├── start.sh            # 启动脚本：设置 LD_LIBRARY_PATH 后 exec python3 app.py
+├── start.sh            # Linux 启动脚本：设置 LD_LIBRARY_PATH 后 exec python3 app.py
+├── start.ps1           # Windows 启动脚本：uv pip 安装依赖并启动
+├── start.bat           # Windows 双击启动入口（调用 start.ps1，绕过执行策略）
 ├── verify.py           # 端到端验证脚本（断言行数、状态取值等）
 ├── requirements.txt    # Python 依赖：flask, oracledb, openpyxl, python-dotenv
 ├── .env.example        # 配置模板，复制为 .env 后填入真实口令
