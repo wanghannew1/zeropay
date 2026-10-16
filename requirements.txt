@@ -2,3 +2,4 @@ flask
 oracledb
 openpyxl
 python-dotenv
+xlsxwriter

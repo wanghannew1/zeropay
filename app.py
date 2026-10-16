@@ -1,14 +1,18 @@
 import io
+import os
 import re
+import tempfile
 from decimal import Decimal
+from datetime import datetime
 
 from flask import Flask, jsonify, render_template, request, send_file
 from openpyxl import Workbook
 from openpyxl.styles import Font, numbers
 from openpyxl.utils import get_column_letter
+import xlsxwriter
 
 import db
-from queries import get_salary_by_cert
+from queries import get_salary_by_cert, get_cross_unit_salary_rows
 
 app = Flask(__name__)
 
@@ -166,6 +170,164 @@ def api_salary_export():
     )
 
 
+MONTH_RE = re.compile(r"^\d{4}(0[1-9]|1[0-2])$")
+VALID_STATUSES = {"unpaid", "not_paid", "all"}
+VALID_SCOPES = {"cross_unit", "all"}
+EXCEL_MAX_DATA_ROWS = 1_048_575  # 1,048,576 total rows minus 1 header
+STATUS_LABELS_EXPORT = {
+    "unpaid": "仅未发放",
+    "not_paid": "未发工资",
+    "all": "全部状态",
+}
+SCOPE_FILENAME_PREFIX = {
+    "cross_unit": "跨结算单元工资明细",
+    "all": "全部人员工资明细",
+}
+
+
+@app.route("/api/cross-unit/export")
+def api_cross_unit_export():
+    from schema_cn import EXPORT_COLUMNS
+
+    month_raw = request.args.get("month", "").strip()
+    pay_month_raw = request.args.get("pay_month", "").strip()
+    status = request.args.get("status", "unpaid").strip()
+    scope = request.args.get("scope", "cross_unit").strip()
+
+    if month_raw:
+        if not MONTH_RE.match(month_raw):
+            return jsonify({"ok": False, "error": "发薪年月格式错误，应为YYYYMM（如202609）"}), 400
+        month = int(month_raw)
+    else:
+        month = None
+
+    if pay_month_raw:
+        if not MONTH_RE.match(pay_month_raw):
+            return jsonify({"ok": False, "error": "发放年月格式错误，应为YYYYMM（如202510）"}), 400
+        pay_month = int(pay_month_raw)
+    else:
+        pay_month = None
+
+    if status not in VALID_STATUSES:
+        return jsonify({"ok": False, "error": "状态筛选参数错误"}), 400
+
+    if scope not in VALID_SCOPES:
+        return jsonify({"ok": False, "error": "查询范围参数错误"}), 400
+
+    # Fast path: reject unfiltered scope=all before the heavy query
+    if scope == "all" and month is None and pay_month is None and status == "all":
+        conn = None
+        try:
+            conn = db.get_connection()
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT COUNT(*) FROM TC93")
+                total = cursor.fetchone()[0]
+            finally:
+                cursor.close()
+        except Exception as e:
+            return jsonify({"ok": False, "error": f"数据库查询失败: {e}"}), 500
+        finally:
+            db.release_connection(conn)
+        if total > EXCEL_MAX_DATA_ROWS:
+            return jsonify({"ok": False, "error": "数据量超过 Excel 单表上限（1048576 行），请增加筛选条件"}), 400
+
+    conn = None
+    tmp_path = None
+    try:
+        conn = db.get_connection()
+        columns, row_iter = get_cross_unit_salary_rows(
+            conn, month=month, pay_month=pay_month, status=status, scope=scope
+        )
+
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".xlsx")
+        os.close(tmp_fd)
+
+        wb = xlsxwriter.Workbook(tmp_path, {"constant_memory": True})
+        ws = wb.add_worksheet("跨结算单元工资明细")
+
+        bold = wb.add_format({"bold": True})
+        money_fmt = wb.add_format({"num_format": "0.00"})
+        date_fmt = wb.add_format({"num_format": "yyyy-mm-dd"})
+
+        for col_idx, col_spec in enumerate(EXPORT_COLUMNS):
+            ws.write(0, col_idx, col_spec["header"], bold)
+
+        ws.freeze_panes("A2")
+        ws.set_column(0, len(EXPORT_COLUMNS) - 1, 14)
+
+        wide_cols = {"AAC002", "BBB001", "ATB931", "AAB004", "AAB004_1"}
+        for col_idx, col_spec in enumerate(EXPORT_COLUMNS):
+            if col_spec["field"] in wide_cols:
+                ws.set_column(col_idx, col_idx, 28)
+
+        row_idx = 1
+        overflow = False
+        for row_data in row_iter:
+            if row_idx > EXCEL_MAX_DATA_ROWS:
+                overflow = True
+                break
+            for col_idx, (value, col_spec) in enumerate(zip(row_data, EXPORT_COLUMNS)):
+                if value is None:
+                    continue
+                kind = col_spec["kind"]
+                if kind == "str":
+                    ws.write_string(row_idx, col_idx, str(value))
+                elif kind == "id":
+                    ws.write_string(row_idx, col_idx, str(int(value)))
+                elif kind == "money":
+                    ws.write_number(row_idx, col_idx, float(value), money_fmt)
+                elif kind == "int":
+                    ws.write_number(row_idx, col_idx, int(value))
+                elif kind == "date":
+                    ws.write_datetime(row_idx, col_idx, value, date_fmt)
+            row_idx += 1
+
+        wb.close()
+
+        if overflow:
+            # Fail closed: delete temp file and return 400
+            try:
+                if tmp_path and os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass
+            return jsonify({"ok": False, "error": "数据量超过 Excel 单表上限（1048576 行），请增加筛选条件"}), 400
+
+        month_str = str(month) if month else "全部"
+        pay_month_str = str(pay_month) if pay_month else "全部"
+        status_str = STATUS_LABELS_EXPORT[status]
+        prefix = SCOPE_FILENAME_PREFIX[scope]
+        filename = f"{prefix}_发薪{month_str}_发放{pay_month_str}_{status_str}.xlsx"
+
+        resp = send_file(
+            tmp_path,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name=filename,
+        )
+
+        def cleanup():
+            try:
+                if tmp_path and os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass
+
+        resp.call_on_close(cleanup)
+        return resp
+
+    except Exception as e:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+        return jsonify({"ok": False, "error": f"数据库查询失败: {e}"}), 500
+    finally:
+        db.release_connection(conn)
+
+
 if __name__ == "__main__":
     db.init_db()
-    app.run(host="0.0.0.0", port=5001, debug=False)
+    app.run(host="0.0.0.0", port=5001, debug=False, threaded=True)
