@@ -82,9 +82,31 @@ else {
     Write-Host "[deps] 使用 pip (清华镜像)" -ForegroundColor Green
 }
 
-# --- 4. Install dependencies (import 检查，缺失才安装) ---
+# --- 4. Install dependencies (按 requirements.txt 生成 import 检查，缺失才安装) ---
 Write-Host "[deps] 检查依赖..." -ForegroundColor Green
-& $_py -c "import flask, oracledb, openpyxl, dotenv" 2>&1 | Out-Null
+# 包名与 import 名不一致时在此补充映射（默认按去版本约束 + "-"→"_" 推导）
+$ImportNameMap = @{ "python-dotenv" = "dotenv" }
+$modules = @()
+foreach ($line in (Get-Content (Join-Path $PSScriptRoot "requirements.txt"))) {
+    $pkg = ($line.Trim() -split "#")[0].Trim()
+    if (-not $pkg) { continue }
+    $pkg = ($pkg -split "[<>=!~;\[]")[0].Trim()
+    if (-not $pkg) { continue }
+    $key = $pkg.ToLower()
+    if ($ImportNameMap.ContainsKey($key)) {
+        $modules += $ImportNameMap[$key]
+    }
+    else {
+        $modules += ($pkg -replace "-", "_")
+    }
+}
+if ($modules.Count -eq 0) {
+    Write-Host "[ERROR] requirements.txt 为空或不可读" -ForegroundColor Red
+    Read-Host "按回车键退出"
+    exit 1
+}
+$importExpr = ($modules | ForEach-Object { "import $_" }) -join "; "
+& $_py -c $importExpr 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[deps] 安装中..." -ForegroundColor Yellow
     Invoke-Expression $_install
